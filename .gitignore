@@ -1,5 +1,11 @@
 venv/
 .env
+.env.*
+config/.env
 data/raw/
 __pycache__/
 *.pyc
+*.db
+*.sqlite
+*.sqlite3
+db/*.db
