@@ -92,7 +92,7 @@ team_matches["rest_days"] = (
     team_matches.groupby("team_id")["date"].diff().dt.days
 )
 
-# cap rest_days at a reasonable ceiling after ~30 days, "more rest" stops
+# cap rest_days at a reasonable ceiling -- after ~30 days, "more rest" stops
 # being a meaningful signal (it's either a season opener or a team returning
 # from relegation, not a fatigue difference)
 team_matches["long_layoff"] = team_matches["rest_days"] > 30
@@ -100,6 +100,12 @@ team_matches["rest_days"] = team_matches["rest_days"].clip(upper=30)
 
 
 ## rolling form excluding current game
+# min_periods=1 means we use however much real history actually exists
+# (1 prior match, 2, 3, 4...) instead of requiring a full 5 before
+# producing anything -- this avoids both fabricating data (like filling
+# with a league average) AND losing every team's early-history matches
+# entirely. only a team's true first-ever match in the dataset (zero
+# prior history of any kind) will still come out as NaN.
 
 rolling_cols = [
     "points", "goals_for", "goals_against",
@@ -112,7 +118,10 @@ rolling_cols = [
 
 for col in rolling_cols:
     team_matches[f"rolling_{col}_5"] = (
-        team_matches.groupby("team_id")[col].shift(1).rolling(window=5).sum()
+        team_matches.groupby("team_id")[col]
+        .shift(1)
+        .rolling(window=5, min_periods=1)
+        .sum()
     )
 
 # HOME/AWAY specific rolling form
@@ -121,7 +130,7 @@ for col in ["points", "goals_for", "goals_against"]:
     team_matches[f"rolling_{col}_5_by_venue"] = (
         team_matches.groupby(["team_id", "venue"])[col]
         .shift(1)
-        .rolling(window=5)
+        .rolling(window=5, min_periods=1)
         .sum()
     )
 
@@ -131,7 +140,7 @@ team_matches = team_matches.sort_values(["team_id", "opponent_id", "date"])
 team_matches["h2h_points_avg_3"] = (
     team_matches.groupby(["team_id", "opponent_id"])["points"]
     .shift(1)
-    .rolling(window=3)
+    .rolling(window=3, min_periods=1)
     .mean()
 )
 
@@ -169,10 +178,11 @@ match_level_cols = matches[[
 ]]
 
 match_features = match_level_cols.merge(match_features, on="match_id")
+match_features = match_features.dropna(subset=match_features.filter(like="rolling").columns.tolist())
 
 # Saving to processed data
-
 match_features.to_csv("data/processed/match_features.csv", index=False)
 
 print(f"Built match_features with shape {match_features.shape}")
 print(f"Saved to data/processed/match_features.csv")
+print(f"Remaining NaNs in rolling features: {match_features.filter(like='rolling').isna().sum().sum()}")
