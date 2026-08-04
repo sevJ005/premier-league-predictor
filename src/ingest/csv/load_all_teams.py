@@ -40,6 +40,8 @@ all_teams = [
     (9007, "Leicester City FC", "Leicester", "LEI"),
     (9008, "Ipswich Town FC", "Ipswich", "IPS"),
     (9009, "Sunderland AFC", "Sunderland", "SUN"),
+    (9010, "Coventry City FC", "Coventry", "COV"),
+    (9011, "Hull City FC", "Hull City", "HUL")
 ]
 
 for team in all_teams:
