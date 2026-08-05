@@ -177,6 +177,12 @@ match_level_cols = matches[[
     "implied_prob_home", "implied_prob_draw", "implied_prob_away"
 ]]
 
+# fill NaN vals
+match_features["rest_days_home"] = match_features["rest_days_home"].fillna(7)
+match_features["rest_days_away"] = match_features["rest_days_away"].fillna(7)
+match_features["h2h_points_avg_3_home"] = match_features["h2h_points_avg_3_home"].fillna(1.38)
+match_features["h2h_points_avg_3_away"] = match_features["h2h_points_avg_3_away"].fillna(1.38)
+
 match_features = match_level_cols.merge(match_features, on="match_id")
 match_features = match_features.dropna(subset=match_features.filter(like="rolling").columns.tolist())
 
