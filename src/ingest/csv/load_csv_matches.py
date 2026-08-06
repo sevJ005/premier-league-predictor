@@ -123,3 +123,5 @@ for file, season_year in files:
 
 connect.commit()
 connect.close()
+
+print("Loaded all matches")
