@@ -144,5 +144,34 @@ for team_id, state in team_state.items():
             key = f"rolling_{col}_5"
             state[key] = 0.7 * state[key] + 0.3 * league_avg[col]
 
+import sqlite3
+import pandas as pd
+
+connect = sqlite3.connect("db/pl_data.db")
+matches = pd.read_sql_query("SELECT * FROM matches", connect)
+connect.close()
+
+# columns we'll need to "use" when simulating a match's actual stats
+stat_cols = [
+    "home_goals_fulltime", "away_goals_fulltime",
+    "home_shots", "away_shots",
+    "home_shots_target", "away_shots_target",
+    "home_corners", "away_corners",
+    "home_yellow", "away_yellow",
+    "home_red", "away_red",
+]
+
+# three pools of real historical matches, grouped by outcome, used to
+# sample a realistic scoreline/stat-line for a simulated match with that
+# same outcome, rather than inventing a fake score
+outcome_pools = {
+    "HOME_TEAM": matches[matches["winner"] == "HOME_TEAM"][stat_cols].reset_index(drop=True),
+    "DRAW": matches[matches["winner"] == "DRAW"][stat_cols].reset_index(drop=True),
+    "AWAY_TEAM": matches[matches["winner"] == "AWAY_TEAM"][stat_cols].reset_index(drop=True),
+}
+
+for outcome, pool in outcome_pools.items():
+    print(outcome, "-", len(pool), "historical matches available to sample from")
+
 for team_id, state in team_state.items():
     print(team_id, state["source"], "points:", state["rolling_points_5"])

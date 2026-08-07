@@ -74,10 +74,85 @@ def synthetic_implied_probs(home_rolling_points, away_rolling_points):
     
     return away_prob, draw_prob, home_prob
 
+def simulate_match(home_team_id, away_team_id, team_state, matchday, model, scaler, feature_cols, outcome_pools):
+    home = team_state[home_team_id]
+    away = team_state[away_team_id]
 
-one_match_probs = probabilities[0]
-print("Probabilities:", one_match_probs)
-print("Classes:", model.classes_)
+    # synthetic odds, derived from current rolling points 
+    # stands in for real market odds, which don't exist yet for a future match
+    away_prob, draw_prob, home_prob = synthetic_implied_probs(
+        home["rolling_points_5"], away["rolling_points_5"]
+    )
 
-for i in range(10):
-    print(np.random.choice(model.classes_, p=one_match_probs))
+    # build one feature row, matching feature_cols exactly
+    row = {
+        "matchday": matchday,
+        "implied_prob_home": home_prob,
+        "implied_prob_draw": draw_prob,
+        "implied_prob_away": away_prob,
+
+        "rolling_points_5_home": home["rolling_points_5"],
+        "rolling_goals_for_5_home": home["rolling_goals_for_5"],
+        "rolling_goals_against_5_home": home["rolling_goals_against_5"],
+        "rolling_shots_for_5_home": home["rolling_shots_for_5"],
+        "rolling_shots_against_5_home": home["rolling_shots_against_5"],
+        "rolling_shots_target_for_5_home": home["rolling_shots_target_for_5"],
+        "rolling_shots_target_against_5_home": home["rolling_shots_target_against_5"],
+        "rolling_corners_for_5_home": home["rolling_corners_for_5"],
+        "rolling_corners_against_5_home": home["rolling_corners_against_5"],
+        "rolling_yellow_for_5_home": home["rolling_yellow_for_5"],
+        "rolling_yellow_against_5_home": home["rolling_yellow_against_5"],
+        "rolling_red_for_5_home": home["rolling_red_for_5"],
+        "rolling_red_against_5_home": home["rolling_red_against_5"],
+        "rolling_points_5_by_venue_home": home["rolling_points_5"],  # simplification, could build on afterward
+        "rolling_goals_for_5_by_venue_home": home["rolling_goals_for_5"],
+        "rolling_goals_against_5_by_venue_home": home["rolling_goals_against_5"],
+        "rest_days_home": 7,  # simplification could build on afterward
+        "long_layoff_home": False,
+        "h2h_points_avg_3_home": 1.38,  # simplification, could build on afterward 
+
+        "rolling_points_5_away": away["rolling_points_5"],
+        "rolling_goals_for_5_away": away["rolling_goals_for_5"],
+        "rolling_goals_against_5_away": away["rolling_goals_against_5"],
+        "rolling_shots_for_5_away": away["rolling_shots_for_5"],
+        "rolling_shots_against_5_away": away["rolling_shots_against_5"],
+        "rolling_shots_target_for_5_away": away["rolling_shots_target_for_5"],
+        "rolling_shots_target_against_5_away": away["rolling_shots_target_against_5"],
+        "rolling_corners_for_5_away": away["rolling_corners_for_5"],
+        "rolling_corners_against_5_away": away["rolling_corners_against_5"],
+        "rolling_yellow_for_5_away": away["rolling_yellow_for_5"],
+        "rolling_yellow_against_5_away": away["rolling_yellow_against_5"],
+        "rolling_red_for_5_away": away["rolling_red_for_5"],
+        "rolling_red_against_5_away": away["rolling_red_against_5"],
+        "rolling_points_5_by_venue_away": away["rolling_points_5"],
+        "rolling_goals_for_5_by_venue_away": away["rolling_goals_for_5"],
+        "rolling_goals_against_5_by_venue_away": away["rolling_goals_against_5"],
+        "rest_days_away": 7,
+        "long_layoff_away": False,
+        "h2h_points_avg_3_away": 1.38,
+    }
+
+    row_df = pd.DataFrame([row])[feature_cols]
+    scaled_row = scaler.transform(row_df)
+
+    probs = model.predict_proba(scaled_row)[0]
+    outcome = np.random.choice(model.classes_, p=probs)
+
+    # borrow a real historical stat-line matching this outcome
+    borrowed = outcome_pools[outcome].sample(1).iloc[0]
+
+    return {
+        "outcome": outcome,
+        "home_goals": borrowed["home_goals_fulltime"],
+        "away_goals": borrowed["away_goals_fulltime"],
+        "home_shots": borrowed["home_shots"],
+        "away_shots": borrowed["away_shots"],
+        "home_shots_target": borrowed["home_shots_target"],
+        "away_shots_target": borrowed["away_shots_target"],
+        "home_corners": borrowed["home_corners"],
+        "away_corners": borrowed["away_corners"],
+        "home_yellow": borrowed["home_yellow"],
+        "away_yellow": borrowed["away_yellow"],
+        "home_red": borrowed["home_red"],
+        "away_red": borrowed["away_red"],
+    }
