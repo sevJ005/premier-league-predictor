@@ -5,7 +5,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.calibration import CalibratedClassifierCV
 from src.simulate.team_initialization import team_state, get_rolling_sum, league_avg, outcome_pools
-import copy
+import copy, time
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 match_features = pd.read_csv("data/processed/match_features.csv")
 fixtures = pd.read_csv("data/raw/fixtures_2026-27.csv")
@@ -136,8 +138,8 @@ def simulate_match(home_team_id, away_team_id, team_state, matchday, model, scal
         "h2h_points_avg_3_away": 1.38,
     }
 
-    row_df = pd.DataFrame([row])[feature_cols]
-    scaled_row = scaler.transform(row_df)
+    row_values = np.array([[row[col] for col in feature_cols]])
+    scaled_row = scaler.transform(row_values)
 
     probs = model.predict_proba(scaled_row)[0]
     outcome = np.random.choice(model.classes_, p=probs)
@@ -217,9 +219,10 @@ def simulate_season(fixtures, team_state, model, scaler, feature_cols, outcome_p
 
     return team_state
 
+start = time.time()
 full_results = []
 
-ran = 10
+ran = 100
 for i in range(ran):
     fresh_state = copy.deepcopy(team_state)
     final_state= simulate_season(fixtures, fresh_state, model, scaler, feature_cols, outcome_pools, league_avg)
@@ -227,18 +230,18 @@ for i in range(ran):
     season_result = {team_id: state["season_total_points"] for team_id, state in final_state.items()}
     full_results.append(season_result)
 
+elapsed = time.time() - start
 
 
 # final_state = simulate_season(fixtures, team_state, model, scaler, feature_cols, outcome_pools, league_avg)
 print("Season simulation complete.")
-
+"""
 for team_id, state in final_state.items():
     print(team_id, "final rolling points:", get_rolling_sum(final_state, team_id, "points", league_avg))
 print("-------------------------------")
 for team_id, state in final_state.items():
     print(team_id, "season total points:", state["season_total_points"])
-
+"""
 print(f"----- Ran {len(full_results)} simulations. -----")
-print(full_results[0])
-print(full_results[1])
+print(f"----- Estimated time for 200'000 runs: {elapsed * 200:.0f} seconds ({elapsed * 200 / 60:.1f} minutes)")
 
