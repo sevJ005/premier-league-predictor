@@ -1,4 +1,3 @@
-import sqlite3
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LogisticRegression
@@ -9,9 +8,10 @@ from src.simulate.team_initialization import team_state, get_rolling_sum, league
 match_features = pd.read_csv("data/processed/match_features.csv")
 fixtures = pd.read_csv("data/raw/fixtures_2026-27.csv")
 
+# odds columns removed entirely -- no synthetic odds needed, since the
+# model was never trained on them in this version
 feature_cols = [
     "matchday",
-    "implied_prob_home", "implied_prob_draw", "implied_prob_away",
 
     # home side rolling form
     "rolling_points_5_home",
@@ -46,6 +46,7 @@ test = match_features[match_features["season_year"] == 2025]
 X_train = train[feature_cols]
 y_train = train["winner"]
 X_test = test[feature_cols]
+y_test = test["winner"]
 
 scaler = StandardScaler()
 scaled_train_data = scaler.fit_transform(X_train)
@@ -55,46 +56,22 @@ base_model = LogisticRegression()
 model = CalibratedClassifierCV(base_model, method="sigmoid", cv=5)
 model.fit(scaled_train_data, y_train)
 
-# test the sampling mechanism on one real match's probabilities
-probabilities = model.predict_proba(scaled_test_data)
+# quick check: how does the no-odds model compare to the full model?
+from sklearn.metrics import accuracy_score
+prediction = model.predict(scaled_test_data)
+print("No-odds model accuracy:", accuracy_score(y_test, prediction))
 
-# adding fake odds for new season matches based off larger rolling point average / momentum + H2H rolling  
-def synthetic_implied_probs(home_rolling_points, away_rolling_points):
-    diff = home_rolling_points - away_rolling_points
-    
-    # logistic curve: bigger point advantage -> higher win probability
-    home_advantage = 1 / (1 + 2.71828 ** (-diff / 5))
-    
-    # crude 3-way split: push toward home/away based on advantage,
-    # keep a baseline draw probability that shrinks slightly as the
-    # gap between teams grows (blowouts are less likely to end level)
-    draw_prob = 0.25 - abs(diff) * 0.01
-    draw_prob = max(draw_prob, 0.10)  # never let draw probability vanish entirely
-    
-    home_prob = home_advantage * (1 - draw_prob)
-    away_prob = (1 - home_advantage) * (1 - draw_prob)
-    
-    return away_prob, draw_prob, home_prob
 
 def simulate_match(home_team_id, away_team_id, team_state, matchday, model, scaler, feature_cols, outcome_pools, league_avg):
     def r(team_id, stat, venue=None):
         return get_rolling_sum(team_state, team_id, stat, league_avg, venue=venue)
 
-    home_points = r(home_team_id, "points")
-    away_points = r(away_team_id, "points")
-
-    # synthetic odds, derived from current rolling points
-    # stands in for real market odds, which don't exist yet for a future match
-    away_prob, draw_prob, home_prob = synthetic_implied_probs(home_points, away_points)
-
-    # build one feature row, matching feature_cols exactly
+    # build one feature row -- now using REAL venue-specific rolling form
+    # for the *_by_venue features, instead of reusing overall form
     row = {
         "matchday": matchday,
-        "implied_prob_home": home_prob,
-        "implied_prob_draw": draw_prob,
-        "implied_prob_away": away_prob,
 
-        "rolling_points_5_home": home_points,
+        "rolling_points_5_home": r(home_team_id, "points"),
         "rolling_goals_for_5_home": r(home_team_id, "goals_for"),
         "rolling_goals_against_5_home": r(home_team_id, "goals_against"),
         "rolling_shots_for_5_home": r(home_team_id, "shots_for"),
@@ -110,11 +87,11 @@ def simulate_match(home_team_id, away_team_id, team_state, matchday, model, scal
         "rolling_points_5_by_venue_home": r(home_team_id, "points", venue="HOME"),
         "rolling_goals_for_5_by_venue_home": r(home_team_id, "goals_for", venue="HOME"),
         "rolling_goals_against_5_by_venue_home": r(home_team_id, "goals_against", venue="HOME"),
-        "rest_days_home": 7,  # simplification, could build on afterward
+        "rest_days_home": 7,  # documented simplification
         "long_layoff_home": False,
-        "h2h_points_avg_3_home": 1.38,  # simplification, could build on afterward
+        "h2h_points_avg_3_home": 1.38,  # documented simplification
 
-        "rolling_points_5_away": away_points,
+        "rolling_points_5_away": r(away_team_id, "points"),
         "rolling_goals_for_5_away": r(away_team_id, "goals_for"),
         "rolling_goals_against_5_away": r(away_team_id, "goals_against"),
         "rolling_shots_for_5_away": r(away_team_id, "shots_for"),
@@ -141,7 +118,6 @@ def simulate_match(home_team_id, away_team_id, team_state, matchday, model, scal
     probs = model.predict_proba(scaled_row)[0]
     outcome = np.random.choice(model.classes_, p=probs)
 
-    # borrow a real historical stat-line matching this outcome
     borrowed = outcome_pools[outcome].sample(1).iloc[0]
 
     return {
@@ -160,9 +136,11 @@ def simulate_match(home_team_id, away_team_id, team_state, matchday, model, scal
         "away_red": borrowed["away_red"],
     }
 
+
 fixtures["date"] = pd.to_datetime(fixtures["date"])
 fixtures = fixtures.sort_values("date").reset_index(drop=True)
-fixtures["matchday"] = fixtures.index + 1
+fixtures["matchday"] = fixtures.index // 10 + 1
+
 
 def simulate_season(fixtures, team_state, model, scaler, feature_cols, outcome_pools, league_avg):
     for _, match in fixtures.iterrows():
@@ -173,7 +151,6 @@ def simulate_season(fixtures, team_state, model, scaler, feature_cols, outcome_p
         result = simulate_match(home_id, away_id, team_state, matchday, model, scaler, feature_cols, outcome_pools, league_avg)
 
         home_points_map = {"HOME_TEAM": 3, "DRAW": 1, "AWAY_TEAM": 0}
-
         home_new_match = {
             "points": home_points_map[result["outcome"]],
             "goals_for": result["home_goals"],
@@ -191,7 +168,6 @@ def simulate_season(fixtures, team_state, model, scaler, feature_cols, outcome_p
         }
 
         away_points_map = {"HOME_TEAM": 0, "DRAW": 1, "AWAY_TEAM": 3}
-
         away_new_match = {
             "points": away_points_map[result["outcome"]],
             "goals_for": result["away_goals"],
@@ -208,21 +184,28 @@ def simulate_season(fixtures, team_state, model, scaler, feature_cols, outcome_p
             "red_against": result["home_red"],
         }
 
-        for team_id, new_match in [(home_id, home_new_match), (away_id, away_new_match)]:
-            team_state[team_id]["recent_matches"].append(new_match)
-            if len(team_state[team_id]["recent_matches"]) > 5:
-                team_state[team_id]["recent_matches"].pop(0)
-            team_state[team_id]["season_total_points"] += new_match["points"]
+        # update overall AND venue-specific histories
+        team_state[home_id]["recent_matches"].append(home_new_match)
+        if len(team_state[home_id]["recent_matches"]) > 5:
+            team_state[home_id]["recent_matches"].pop(0)
+        team_state[home_id]["recent_home_matches"].append(home_new_match)
+        if len(team_state[home_id]["recent_home_matches"]) > 5:
+            team_state[home_id]["recent_home_matches"].pop(0)
+        team_state[home_id]["season_total_points"] += home_new_match["points"]
+
+        team_state[away_id]["recent_matches"].append(away_new_match)
+        if len(team_state[away_id]["recent_matches"]) > 5:
+            team_state[away_id]["recent_matches"].pop(0)
+        team_state[away_id]["recent_away_matches"].append(away_new_match)
+        if len(team_state[away_id]["recent_away_matches"]) > 5:
+            team_state[away_id]["recent_away_matches"].pop(0)
+        team_state[away_id]["season_total_points"] += away_new_match["points"]
 
     return team_state
 
+
 final_state = simulate_season(fixtures, team_state, model, scaler, feature_cols, outcome_pools, league_avg)
 print("Season simulation complete.")
-
-for team_id, state in final_state.items():
-    print(team_id, "final rolling points:", get_rolling_sum(final_state, team_id, "points", league_avg))
-    
-print("-------------------------------")
 
 for team_id, state in final_state.items():
     print(team_id, "season total points:", state["season_total_points"])
