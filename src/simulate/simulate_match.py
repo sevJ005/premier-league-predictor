@@ -5,6 +5,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.calibration import CalibratedClassifierCV
 from src.simulate.team_initialization import team_state, get_rolling_sum, league_avg, outcome_pools
+import copy
 
 match_features = pd.read_csv("data/processed/match_features.csv")
 fixtures = pd.read_csv("data/raw/fixtures_2026-27.csv")
@@ -216,13 +217,28 @@ def simulate_season(fixtures, team_state, model, scaler, feature_cols, outcome_p
 
     return team_state
 
-final_state = simulate_season(fixtures, team_state, model, scaler, feature_cols, outcome_pools, league_avg)
+full_results = []
+
+ran = 10
+for i in range(ran):
+    fresh_state = copy.deepcopy(team_state)
+    final_state= simulate_season(fixtures, fresh_state, model, scaler, feature_cols, outcome_pools, league_avg)
+
+    season_result = {team_id: state["season_total_points"] for team_id, state in final_state.items()}
+    full_results.append(season_result)
+
+
+
+# final_state = simulate_season(fixtures, team_state, model, scaler, feature_cols, outcome_pools, league_avg)
 print("Season simulation complete.")
 
 for team_id, state in final_state.items():
     print(team_id, "final rolling points:", get_rolling_sum(final_state, team_id, "points", league_avg))
-    
 print("-------------------------------")
-
 for team_id, state in final_state.items():
     print(team_id, "season total points:", state["season_total_points"])
+
+print(f"----- Ran {len(full_results)} simulations. -----")
+print(full_results[0])
+print(full_results[1])
+
