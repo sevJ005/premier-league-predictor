@@ -1,10 +1,9 @@
-import sqlite3
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.calibration import CalibratedClassifierCV
-from src.simulate.team_initialization import team_state, get_rolling_sum, league_avg, outcome_pools
+from src.simulate.team_initialization import team_state, get_rolling_sum, league_avg, outcome_pools, outcome_arrays
 import copy, time
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -54,9 +53,14 @@ scaler = StandardScaler()
 scaled_train_data = scaler.fit_transform(X_train)
 scaled_test_data = scaler.transform(X_test)
 
+# calibrated version
 base_model = LogisticRegression()
 model = CalibratedClassifierCV(base_model, method="sigmoid", cv=5)
 model.fit(scaled_train_data, y_train)
+
+# uncalibrated version, for speed comparison
+plain_model = LogisticRegression()
+plain_model.fit(scaled_train_data, y_train)
 
 # test the sampling mechanism on one real match's probabilities
 probabilities = model.predict_proba(scaled_test_data)
@@ -145,33 +149,35 @@ def simulate_match(home_team_id, away_team_id, team_state, matchday, model, scal
     outcome = np.random.choice(model.classes_, p=probs)
 
     # borrow a real historical stat-line matching this outcome
-    borrowed = outcome_pools[outcome].sample(1).iloc[0]
+    pool = outcome_arrays[outcome]
+    borrowed = pool[np.random.randint(len(pool))]
 
     return {
         "outcome": outcome,
-        "home_goals": borrowed["home_goals_fulltime"],
-        "away_goals": borrowed["away_goals_fulltime"],
-        "home_shots": borrowed["home_shots"],
-        "away_shots": borrowed["away_shots"],
-        "home_shots_target": borrowed["home_shots_target"],
-        "away_shots_target": borrowed["away_shots_target"],
-        "home_corners": borrowed["home_corners"],
-        "away_corners": borrowed["away_corners"],
-        "home_yellow": borrowed["home_yellow"],
-        "away_yellow": borrowed["away_yellow"],
-        "home_red": borrowed["home_red"],
-        "away_red": borrowed["away_red"],
+        "home_goals": borrowed[0],
+        "away_goals": borrowed[1],
+        "home_shots": borrowed[2],
+        "away_shots": borrowed[3],
+        "home_shots_target": borrowed[4],
+        "away_shots_target": borrowed[5],
+        "home_corners": borrowed[6],
+        "away_corners": borrowed[7],
+        "home_yellow": borrowed[8],
+        "away_yellow": borrowed[9],
+        "home_red": borrowed[10],
+        "away_red": borrowed[11],
     }
 
 fixtures["date"] = pd.to_datetime(fixtures["date"])
 fixtures = fixtures.sort_values("date").reset_index(drop=True)
 fixtures["matchday"] = fixtures.index + 1
 
-def simulate_season(fixtures, team_state, model, scaler, feature_cols, outcome_pools, league_avg):
-    for _, match in fixtures.iterrows():
-        home_id = match["home_team_id"]
-        away_id = match["away_team_id"]
-        matchday = match["matchday"]
+fixture_data = list(
+    fixtures[["home_team_id", "away_team_id", "matchday"]].itertuples(index=False, name=None)
+)
+
+def simulate_season(fixture_data, team_state, model, scaler, feature_cols, outcome_pools, league_avg):
+    for home_id, away_id, matchday in fixture_data:
 
         result = simulate_match(home_id, away_id, team_state, matchday, model, scaler, feature_cols, outcome_pools, league_avg)
 
@@ -222,15 +228,22 @@ def simulate_season(fixtures, team_state, model, scaler, feature_cols, outcome_p
 start = time.time()
 full_results = []
 
-ran = 100
+ran = 50
 for i in range(ran):
     fresh_state = copy.deepcopy(team_state)
-    final_state= simulate_season(fixtures, fresh_state, model, scaler, feature_cols, outcome_pools, league_avg)
+    final_state= simulate_season(fixture_data, fresh_state, model, scaler, feature_cols, outcome_pools, league_avg)
 
     season_result = {team_id: state["season_total_points"] for team_id, state in final_state.items()}
     full_results.append(season_result)
 
 elapsed = time.time() - start
+print(f"Calibrated: {elapsed:.1f}s for 50 seasons")
+
+start = time.time()
+for i in range(ran):
+    fresh_state = copy.deepcopy(team_state)
+    simulate_season(fixture_data, fresh_state, plain_model, scaler, feature_cols, outcome_pools, league_avg)
+plain_time = time.time() - start
 
 
 # final_state = simulate_season(fixtures, team_state, model, scaler, feature_cols, outcome_pools, league_avg)
@@ -242,6 +255,6 @@ print("-------------------------------")
 for team_id, state in final_state.items():
     print(team_id, "season total points:", state["season_total_points"])
 """
-print(f"----- Ran {len(full_results)} simulations. -----")
-print(f"----- Estimated time for 200'000 runs: {elapsed * 200:.0f} seconds ({elapsed * 200 / 60:.1f} minutes)")
 
+print(f"Plain: {plain_time:.1f}s for 50 seasons")
+print(f"Speedup: {elapsed / plain_time:.1f}x")

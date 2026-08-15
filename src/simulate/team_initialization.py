@@ -200,6 +200,11 @@ outcome_pools = {
     "AWAY_TEAM": matches[matches["winner"] == "AWAY_TEAM"][stat_cols].reset_index(drop=True),
 }
 
+outcome_arrays = {
+    outcome: pool.to_numpy()
+    for outcome, pool in outcome_pools.items()
+}
+
 # sanity check
 for team_id, state in team_state.items():
     overall = get_rolling_sum(team_state, team_id, "points", league_avg)
