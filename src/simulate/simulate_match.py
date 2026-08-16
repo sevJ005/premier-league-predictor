@@ -56,7 +56,6 @@ base_model = LogisticRegression()
 model = CalibratedClassifierCV(base_model, method="sigmoid", cv=5)
 model.fit(scaled_train_data, y_train)
 
-
 def synthetic_implied_probs(home_rolling_points, away_rolling_points):
     diff = home_rolling_points - away_rolling_points
     home_advantage = 1 / (1 + 2.71828 ** (-diff / 5))
@@ -221,7 +220,7 @@ def simulate_season(fixture_data, team_state, model, scaler, outcome_arrays, lea
 
 # benchmark seasons with the calibrated model 
 start = time.time()
-NUM_SIMULATIONS = 20000
+NUM_SIMULATIONS = 50000
 
 all_results = []
 
@@ -236,13 +235,12 @@ for i in range(NUM_SIMULATIONS):
     if (i + 1) % 500 == 0:
         elapsed = time.time() - start
         print(f"Completed {i + 1}/{NUM_SIMULATIONS} simulations ({elapsed/60:.1f} minutes elapsed)")
+        with open("data/processed/simulation_results_50k_final.json", "w") as f:
+            json.dump(all_results, f)
 
 elapsed = time.time() - start
 print(f"Finished all {NUM_SIMULATIONS} simulations in {elapsed/3600:.2f} hours")
-elapsed = time.time() - start
-print(f"Calibrated (optimized): {elapsed:.1f}s for 50 seasons")
-print(f"Estimated for 200,000 seasons: {elapsed * 4000 / 3600:.1f} hours")
 
-with open("data/processed/simulation_results.json", "w") as f:
+with open("data/processed/simulation_results_50k_final.json", "w") as f:
     json.dump(all_results, f)
-print("Results saved to data/processed/simulation_results.json")
+print("Results saved to data/processed/simulation_results_50k_final.json")
