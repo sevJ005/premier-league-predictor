@@ -51,5 +51,12 @@ summary["title_pct"] = summary["title_pct"].round(1)
 summary["top4_pct"] = summary["top4_pct"].round(1)
 summary["relegation_pct"] = summary["relegation_pct"].round(1)
 
+predicted_table = summary.sort_values("top4_pct", ascending=False).reset_index(drop=True)
+predicted_table.insert(0, "predicted_position", range(1, 21))
+
+print(predicted_table[["predicted_position", "team", "title_pct", "top4_pct", "relegation_pct"]])
+predicted_table.to_csv("data/processed/predicted_final_table.csv", index=False)
+print("Saved to data/processed/predicted_final_table.csv")
+
 summary.to_csv("data/processed/season_predictions_summary.csv", index=False)
 print("Saved to data/processed/season_predictions_summary.csv")
