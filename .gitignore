@@ -3,7 +3,6 @@ venv/
 .env.*
 config/.env
 data/raw/
-data/processed/
 __pycache__/
 *.pyc
 *.db
